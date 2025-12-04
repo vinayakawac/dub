@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>dub</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+      background: transparent;
+      color: #e8eaed;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    #app {
+      width: 450px;
+      height: 500px;
+      display: flex;
+      flex-direction: column;
+      background: #202124;
+      border-radius: 8px;
+      border: 1px solid #5f6368;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.9);
+    }
+
+    /* Header with drag handle */
+    #header {
+      padding: 12px 16px;
+      background: #292a2d;
+      border-radius: 8px 8px 0 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: move;
+      -webkit-app-region: drag;
+      pointer-events: auto;
+      border-bottom: 1px solid #3c4043;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .app-icon {
+      font-size: 18px;
+    }
+
+    .app-title {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .controls {
+      -webkit-app-region: no-drag;
+      display: flex;
+      gap: 8px;
+    }
+
+    .control-btn {
+      padding: 6px 12px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s;
+      pointer-events: auto;
+      font-weight: 500;
+      background: #3c4043;
+      color: #e8eaed;
+    }
+
+    .hide-btn {
+      background: #5f6368;
+      color: #e8eaed;
+    }
+
+    .hide-btn:hover {
+      background: #80868b;
+    }
+
+    .settings-btn {
+      background: #8ab4f8;
+      color: #202124;
+    }
+
+    .settings-btn:hover {
+      background: #aecbfa;
+    }
+
+    /* Status bar */
+    #status-bar {
+      padding: 8px 16px;
+      background: #292a2d;
+      border-bottom: 1px solid #3c4043;
+      font-size: 11px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+    }
+
+    .status-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #81c995;
+      animation: pulse 2s infinite;
+    }
+
+    .status-dot.recording {
+      background: #f28b82;
+    }
+
+    .status-dot.processing {
+      background: #fdd663;
+    }
+
+    #model-indicator {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    /* Answer container */
+    #answer-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      pointer-events: auto;
+    }
+
+    .answer-card {
+      background: #292a2d;
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+      animation: slideIn 0.3s ease-out;
+      border-left: 3px solid #8ab4f8;
+      border: 1px solid #3c4043;
+    }
+
+    .question {
+      font-size: 13px;
+      color: #9aa0a6;
+      margin-bottom: 12px;
+      font-weight: 600;
+    }
+
+    .answer {
+      font-size: 14px;
+      line-height: 1.6;
+      color: #e8eaed;
+    }
+
+    .talking-point {
+      margin: 8px 0;
+      padding-left: 16px;
+      position: relative;
+    }
+
+    .talking-point::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      color: #8ab4f8;
+      font-weight: bold;
+      font-size: 16px;
+    }
+
+    .code-solution {
+      background: #1e1f20;
+      padding: 12px;
+      border-radius: 4px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 12px;
+      overflow-x: auto;
+      margin-top: 12px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      border: 1px solid #3c4043;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #9aa0a6;
+    }
+
+    .empty-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+
+    .empty-title {
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+
+    .empty-subtitle {
+      font-size: 12px;
+      color: #4a5568;
+    }
+
+    /* Recording indicator overlay */
+    #recording-indicator {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #f28b82;
+      padding: 20px 32px;
+      border-radius: 8px;
+      display: none;
+      animation: fadeIn 0.3s;
+      pointer-events: none;
+      z-index: 1000;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+      border: 1px solid #ea4335;
+      color: #202124;
+    }
+
+    #recording-indicator.active {
+      display: block;
+    }
+
+    .recording-icon {
+      font-size: 32px;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+
+    .recording-text {
+      font-size: 14px;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    /* Quick actions bar */
+    #quick-actions {
+      padding: 12px 16px;
+      background: #292a2d;
+      border-radius: 0 0 8px 8px;
+      display: flex;
+      gap: 8px;
+      pointer-events: auto;
+      border-top: 1px solid #3c4043;
+    }
+
+    .quick-btn {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: 4px;
+      background: #8ab4f8;
+      color: #202124;
+      cursor: pointer;
+      font-size: 11px;
+      transition: all 0.2s;
+      font-weight: 500;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .quick-btn:hover {
+      background: #aecbfa;
+      transform: translateY(-2px);
+    }
+
+    .quick-btn.active {
+      background: #f28b82;
+      color: #202124;
+    }
+
+    .quick-btn.active:hover {
+      background: #f6aea9;
+    }
+
+    .btn-icon {
+      font-size: 18px;
+    }
+
+    .btn-label {
+      font-size: 10px;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #202124;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #5f6368;
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #80868b;
+    }
+
+    /* Animations */
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateX(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    /* Settings modal */
+    #settings-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.85);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 2000;
+      pointer-events: auto;
+    }
+
+    #settings-modal.active {
+      display: flex;
+    }
+
+    .settings-content {
+      background: #292a2d;
+      border-radius: 8px;
+      padding: 24px;
+      width: 380px;
+      max-height: 600px;
+      overflow-y: auto;
+      border: 1px solid #5f6368;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.7);
+    }
+
+    .settings-header {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .close-settings {
+      cursor: pointer;
+      font-size: 24px;
+      color: #9aa0a6;
+      transition: color 0.2s;
+    }
+
+    .close-settings:hover {
+      color: #e8eaed;
+    }
+
+    .settings-section {
+      margin-bottom: 20px;
+    }
+
+    .settings-label {
+      font-size: 12px;
+      color: #9aa0a6;
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    .settings-input {
+      width: 100%;
+      padding: 10px;
+      background: #202124;
+      border: 1px solid #5f6368;
+      border-radius: 4px;
+      color: #e8eaed;
+      font-size: 13px;
+    }
+
+    .settings-input:focus {
+      outline: none;
+      border-color: #8ab4f8;
+    }
+
+    .settings-select {
+      width: 100%;
+      padding: 10px;
+      background: #202124;
+      border: 1px solid #5f6368;
+      border-radius: 4px;
+      color: #e8eaed;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .settings-select:focus {
+      outline: none;
+      border-color: #8ab4f8;
+    }
+
+    .settings-textarea {
+      width: 100%;
+      padding: 10px;
+      background: #202124;
+      border: 1px solid #5f6368;
+      border-radius: 4px;
+      color: #e8eaed;
+      font-size: 13px;
+      min-height: 80px;
+      resize: vertical;
+      font-family: inherit;
+    }
+
+    .settings-textarea:focus {
+      outline: none;
+      border-color: #8ab4f8;
+    }
+
+    .save-settings-btn {
+      width: 100%;
+      padding: 12px;
+      background: #8ab4f8;
+      border: none;
+      border-radius: 4px;
+      color: #202124;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .save-settings-btn:hover {
+      background: #aecbfa;
+    }
+
+    /* Loading state */
+    .loading {
+      text-align: center;
+      padding: 20px;
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .spinner {
+      border: 3px solid rgba(255, 255, 255, 0.1);
+      border-top-color: #667eea;
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 12px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <div id="header">
+      <div class="header-left">
+        <span class="app-title">dub</span>
+      </div>
+      <div class="controls">
+        <button class="control-btn settings-btn" id="settings-btn">Settings</button>
+        <button class="control-btn hide-btn" id="hide-btn">×</button>
+      </div>
+    </div>
+
+    <!-- Status Bar -->
+    <div id="status-bar">
+      <div class="status-left">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">Ready</span>
+      </div>
+      <span id="model-indicator">GPT-4o</span>
+    </div>
+
+    <!-- Recording Indicator -->
+    <div id="recording-indicator">
+      <div class="recording-text">Listening...</div>
+    </div>
+
+    <!-- Answer Display -->
+    <div id="answer-container">
+      <div class="empty-state">
+        <div class="empty-title">Press Ctrl+Shift+R to start recording</div>
+        <div class="empty-subtitle">Answers will appear here instantly</div>
+      </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div id="quick-actions">
+      <button class="quick-btn" id="record-btn">
+        <span class="btn-label">Record</span>
+      </button>
+      <button class="quick-btn" id="screen-btn">
+        <span class="btn-label">Capture</span>
+      </button>
+      <button class="quick-btn" id="clear-btn">
+        <span class="btn-label">Clear</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal">
+    <div class="settings-content">
+      <div class="settings-header">
+        <span>Settings</span>
+        <span class="close-settings" id="close-settings">×</span>
+      </div>
+
+      <div class="settings-section">
+        <label class="settings-label">Groq API Key (Optional - Free Tier Available!)</label>
+        <input type="password" class="settings-input" id="openai-key" placeholder="Get free key at console.groq.com">
+        <div style="font-size: 10px; color: rgba(255,255,255,0.5); margin-top: 4px;">
+          Free tier: 30 requests/min with Llama 3.3 70B (Fast & Powerful!)
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <label class="settings-label">AI Model</label>
+        <select class="settings-select" id="model-select">
+          <option value="llama-3.3-70b-versatile">Llama 3.3 70B (Free & Fast)</option>
+          <option value="llama-3.1-70b-versatile">Llama 3.1 70B (Free)</option>
+          <option value="mixtral-8x7b-32768">Mixtral 8x7B (Free)</option>
+          <option value="gemma2-9b-it">Gemma 2 9B (Free)</option>
+        </select>
+        <div style="font-size: 10px; color: rgba(255,255,255,0.5); margin-top: 4px;">
+          All models are FREE with Groq!
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <label class="settings-label">Job Description (Optional)</label>
+        <textarea class="settings-textarea" id="job-description" placeholder="Paste job description here for more tailored responses..."></textarea>
+      </div>
+
+      <div class="settings-section">
+        <label class="settings-label">Resume Summary (Optional)</label>
+        <textarea class="settings-textarea" id="resume-summary" placeholder="Paste key points from your resume..."></textarea>
+      </div>
+
+      <button class="save-settings-btn" id="save-settings">Save Settings</button>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

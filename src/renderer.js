@@ -4,8 +4,8 @@ const fs = require('fs');
 
 // Configuration
 let CONFIG = {
-  provider: 'free', // 'free' for Groq, 'openai' if user has key
-  groqKey: 'gsk_free', // Will use free tier
+  provider: 'groq',
+  groqKey: '',
   currentModel: 'llama-3.3-70b-versatile',
   whisperModel: 'whisper-large-v3'
 };
@@ -16,6 +16,7 @@ let resumeContext = '';
 let jobContext = '';
 let conversationHistory = [];
 let isRecording = false;
+let isInitialized = false;
 
 // DOM Elements
 const answerContainer = document.getElementById('answer-container');
@@ -39,44 +40,79 @@ const resumeSummaryInput = document.getElementById('resume-summary');
 // Initialize application
 async function init() {
   try {
-    // Initialize Groq with free API (or user's key if provided)
+    console.log('Initializing dub application...');
+    
+    // Get configuration from main process
     const config = await ipcRenderer.invoke('get-config');
-    
-    if (config.apiKeys && config.apiKeys.groq) {
-      CONFIG.groqKey = config.apiKeys.groq;
-    }
-    
-    // Initialize Groq client (free tier available)
-    groqClient = new Groq({ 
-      apiKey: CONFIG.groqKey,
-      dangerouslyAllowBrowser: true 
+    console.log('Config received:', { 
+      hasApiKeys: !!config.apiKeys, 
+      hasGroqKey: !!(config.apiKeys && config.apiKeys.groq),
+      groqKeyLength: config.apiKeys?.groq?.length 
     });
     
-    if (config.settings && config.settings.model) {
-      CONFIG.currentModel = config.settings.model;
-      modelIndicator.textContent = 'Llama 3.3 (Free)';
-      modelSelect.value = CONFIG.currentModel;
+    // Load API key
+    if (config.apiKeys && config.apiKeys.groq && config.apiKeys.groq.length > 10) {
+      CONFIG.groqKey = config.apiKeys.groq;
+      console.log('Groq API key loaded successfully');
     } else {
-      modelIndicator.textContent = 'Llama 3.3 (Free)';
+      console.error('No valid Groq API key found');
+      updateStatus('API Key Required - Open Settings', 'error');
+      setTimeout(() => {
+        showError('Please add your Groq API key in Settings. Get one free at console.groq.com');
+      }, 1000);
+      return;
     }
     
+    // Initialize Groq client
+    try {
+      groqClient = new Groq({ 
+        apiKey: CONFIG.groqKey,
+        dangerouslyAllowBrowser: true 
+      });
+      console.log('Groq client initialized');
+      isInitialized = true;
+      updateStatus('Ready - AI Connected', 'ready');
+    } catch (error) {
+      console.error('Failed to initialize Groq client:', error);
+      updateStatus('Client Error - Check Settings', 'error');
+      return;
+    }
+    
+    // Load model settings
+    if (config.settings && config.settings.model) {
+      CONFIG.currentModel = config.settings.model;
+      modelIndicator.textContent = 'Llama 3.3 70B';
+      modelSelect.value = CONFIG.currentModel;
+    } else {
+      modelIndicator.textContent = 'Llama 3.3 70B';
+    }
+    
+    // Load resume context
     if (config.resume) {
       resumeContext = config.resume;
       resumeSummaryInput.value = resumeContext;
     }
     
+    // Load job description
     if (config.jobDescription) {
       jobContext = config.jobDescription;
       jobDescriptionInput.value = jobContext;
     }
     
-    // Initialize browser speech recognition (completely free!)
+    // Populate API key input if available
+    if (config.apiKeys && config.apiKeys.groq) {
+      openaiKeyInput.value = config.apiKeys.groq;
+    }
+    
+    // Initialize browser speech recognition
     initBrowserSpeechRecognition();
     
-    updateStatus('Ready (Free Mode)', 'ready');
+    console.log('Initialization complete');
+    
   } catch (error) {
     console.error('Initialization error:', error);
-    updateStatus('Ready (Free Mode)', 'ready');
+    updateStatus('Initialization Failed', 'error');
+    showError('Failed to initialize. Check console for details.');
   }
 }
 
@@ -91,26 +127,83 @@ function initBrowserSpeechRecognition() {
     recognition.interimResults = false;
     recognition.lang = 'en-US';
     
+    recognition.onstart = () => {
+      console.log('Speech recognition started');
+      updateStatus('Listening... Speak now!', 'recording');
+    };
+    
     recognition.onresult = async (event) => {
       const transcript = event.results[0][0].transcript;
+      console.log('Transcript:', transcript);
+      updateStatus('Processing speech...', 'processing');
       if (transcript.trim()) {
         await generateAnswer(transcript);
+      } else {
+        updateStatus('No speech detected', 'ready');
       }
     };
     
     recognition.onerror = (event) => {
       console.error('Speech recognition error:', event.error);
-      updateStatus('Speech recognition error', 'error');
-    };
-    
-    recognition.onend = () => {
+      let errorMessage = '';
+      let showInputFallback = false;
+      
+      switch(event.error) {
+        case 'no-speech':
+          errorMessage = 'No speech detected - Try again or type your question below';
+          showInputFallback = true;
+          break;
+        case 'audio-capture':
+          errorMessage = 'Microphone not accessible - Check permissions in browser settings';
+          break;
+        case 'not-allowed':
+          errorMessage = 'Microphone blocked - Allow microphone access in browser';
+          break;
+        case 'network':
+          errorMessage = 'Network Error - Internet required for speech recognition. Type your question below instead.';
+          showInputFallback = true;
+          break;
+        case 'service-not-allowed':
+          errorMessage = 'Speech service unavailable - Check internet connection or type question below';
+          showInputFallback = true;
+          break;
+        default:
+          errorMessage = 'Speech error: ' + event.error + ' - Try typing your question instead';
+          showInputFallback = true;
+      }
+      
+      updateStatus(errorMessage, 'error');
+      
+      // Show manual input option for network errors
+      if (showInputFallback) {
+        setTimeout(() => {
+          showManualInputPrompt();
+        }, 100);
+      }
+      
       isRecording = false;
       recordingIndicator.classList.remove('active');
       recordBtn.classList.remove('active');
       recordBtn.querySelector('.btn-label').textContent = 'Record';
     };
     
+    recognition.onend = () => {
+      console.log('Speech recognition ended');
+      isRecording = false;
+      recordingIndicator.classList.remove('active');
+      recordBtn.classList.remove('active');
+      recordBtn.querySelector('.btn-label').textContent = 'Record';
+      if (statusText.textContent.includes('Listening')) {
+        updateStatus('Ready (Free Mode)', 'ready');
+      }
+    };
+    
     useBrowserSpeech = true;
+    console.log('Browser speech recognition initialized');
+  } else {
+    console.warn('Speech recognition not supported in this browser');
+    showError('Speech recognition not supported. Please use Chrome or Edge browser.');
+    useBrowserSpeech = false;
   }
 }
 
@@ -177,32 +270,33 @@ async function processAudio(audioPath) {
     }
     
     // Clean up audio file
-    await ipcRenderer.invoke('delete-audio-file', audioPath);
-    
-  } catch (error) {
-    console.error('Transcription error:', error);
-    showError('Transcription failed. Using browser speech instead.');
-    updateStatus('Ready', 'ready');
-    
-    // Clean up audio file
-    try {
-      await ipcRenderer.invoke('delete-audio-file', audioPath);
-    } catch (e) {
-      console.error('Failed to delete audio file:', e);
+    if (fs.existsSync(audioPath)) {
+      fs.unlinkSync(audioPath);
     }
+  } catch (error) {
+    console.error('Audio processing error:', error);
+    showError('Failed to process audio: ' + error.message);
+    updateStatus('Ready', 'ready');
   }
 }
 
-// Generate AI answer using FREE Groq API
+// Generate AI answer
 async function generateAnswer(question) {
-  if (!groqClient) {
-    showError('AI client not available. Please check internet connection.');
-    updateStatus('Ready', 'ready');
+  if (!groqClient || !isInitialized) {
+    showError('AI not initialized. Please open Settings and add your Groq API key.');
+    updateStatus('Setup Required', 'error');
+    return;
+  }
+
+  if (!CONFIG.groqKey || CONFIG.groqKey.length < 10) {
+    showError('Invalid API key. Please check Settings and add a valid Groq API key.');
+    updateStatus('API Key Required', 'error');
     return;
   }
 
   try {
     updateStatus('Generating answer...', 'processing');
+    console.log('Generating answer for:', question.substring(0, 50) + '...');
     
     const systemPrompt = buildSystemPrompt();
     
@@ -212,15 +306,16 @@ async function generateAnswer(question) {
       { role: 'user', content: question }
     ];
     
-    // Use Groq's FREE Llama model
+    // Use Groq's Llama model
     const response = await groqClient.chat.completions.create({
-      model: CONFIG.currentModel, // llama-3.3-70b-versatile is FREE and fast!
+      model: CONFIG.currentModel,
       messages: messages,
       max_tokens: 500,
       temperature: 0.7
     });
     
     const answer = response.choices[0].message.content;
+    console.log('Answer generated successfully');
     
     displayAnswer(question, answer);
     
@@ -235,23 +330,32 @@ async function generateAnswer(question) {
       conversationHistory = conversationHistory.slice(-20);
     }
     
-    updateStatus('Ready (Free Mode)', 'ready');
+    updateStatus('Ready - AI Connected', 'ready');
     
     // Show notification
     ipcRenderer.send('show-notification', 'dub', 'Answer generated successfully');
     
   } catch (error) {
     console.error('AI generation error:', error);
+    console.error('Error details:', error.message);
     
-    if (error.message.includes('API key') || error.message.includes('401')) {
-      showError('Getting free Groq API key... Visit console.groq.com for instant free key');
-    } else if (error.message.includes('rate limit')) {
+    if (error.message.includes('API key') || error.message.includes('401') || error.message.includes('Unauthorized') || error.message.includes('invalid_api_key')) {
+      if (!CONFIG.groqKey || CONFIG.groqKey.length < 10) {
+        showError('API Key Required - Click Settings and add your free Groq API key from console.groq.com');
+      } else {
+        showError('Invalid API Key - Your key may be incorrect or expired. Get a new free key from console.groq.com');
+      }
+      updateStatus('Authentication Failed', 'error');
+    } else if (error.message.includes('rate limit') || error.message.includes('429')) {
       showError('Rate limit reached. Free tier: 30 requests/min. Wait a moment and try again.');
+      updateStatus('Rate Limited', 'error');
+    } else if (error.message.includes('network') || error.message.includes('fetch') || error.message.includes('Failed to fetch')) {
+      showError('Network error - Check your internet connection and try again.');
+      updateStatus('Network Error', 'error');
     } else {
-      showError(`Generation failed: ${error.message}. Check internet connection.`);
+      showError(`Error: ${error.message}. Try again or check Settings.`);
+      updateStatus('Error Occurred', 'error');
     }
-    
-    updateStatus('Ready (Free Mode)', 'ready');
   }
 }
 
@@ -373,209 +477,9 @@ let screenReadingActive = false;
 let screenReadingInterval = null;
 
 screenBtn.addEventListener('click', async () => {
-  if (screenReadingActive) {
-    // Stop screen reading
-    stopScreenReading();
-  } else {
-    // Start continuous screen reading
-    startScreenReading();
-  }
+  showError('Screen Capture: Under Development - Coming Soon!');
+  updateStatus('Feature in development', 'ready');
 });
-
-async function startScreenReading() {
-  screenReadingActive = true;
-  screenBtn.classList.add('active');
-  screenBtn.querySelector('.btn-label').textContent = 'Stop Read';
-  updateStatus('Reading screen...', 'processing');
-  
-  // Show notification
-  const card = document.createElement('div');
-  card.className = 'answer-card';
-  card.id = 'screen-reading-status';
-  card.style.borderLeftColor = '#fbbf24';
-  card.innerHTML = `
-    <div class="question">Screen Reading Active</div>
-    <div class="answer">
-      <div class="talking-point">Continuously monitoring screen content</div>
-      <div class="talking-point">Detecting questions and providing answers</div>
-      <div class="talking-point">Click "Stop Read" to end monitoring</div>
-    </div>
-  `;
-  
-  const emptyState = answerContainer.querySelector('.empty-state');
-  if (emptyState) {
-    answerContainer.removeChild(emptyState);
-  }
-  answerContainer.insertBefore(card, answerContainer.firstChild);
-  
-  // Capture and analyze screen every 3 seconds
-  screenReadingInterval = setInterval(async () => {
-    await captureAndAnalyzeScreen();
-  }, 3000);
-  
-  // Initial capture
-  await captureAndAnalyzeScreen();
-}
-
-function stopScreenReading() {
-  screenReadingActive = false;
-  screenBtn.classList.remove('active');
-  screenBtn.querySelector('.btn-label').textContent = 'Capture';
-  updateStatus('Ready (Free Mode)', 'ready');
-  
-  if (screenReadingInterval) {
-    clearInterval(screenReadingInterval);
-    screenReadingInterval = null;
-  }
-  
-  // Remove status card
-  const statusCard = document.getElementById('screen-reading-status');
-  if (statusCard) {
-    statusCard.remove();
-  }
-  
-  ipcRenderer.send('show-notification', 'dub', 'Screen reading stopped');
-}
-
-async function captureAndAnalyzeScreen() {
-  if (!groqClient) {
-    showError('AI client not available');
-    stopScreenReading();
-    return;
-  }
-  
-  try {
-    // Capture screen
-    const screenshot = await ipcRenderer.invoke('capture-screen');
-    
-    if (!screenshot) {
-      return;
-    }
-    
-    // Use Groq's vision model to analyze screen
-    const response = await groqClient.chat.completions.create({
-      model: 'llama-3.2-90b-vision-preview',
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: `Analyze this screen capture and identify any interview questions, coding problems, or important information. If you detect a question:
-1. Extract the exact question text
-2. Provide 3-4 concise talking points to answer it
-3. Format as: QUESTION: [question] | ANSWER: [talking points]
-
-If no clear question is visible, respond with: NO_QUESTION`
-            },
-            {
-              type: 'image_url',
-              image_url: {
-                url: screenshot
-              }
-            }
-          ]
-        }
-      ],
-      max_tokens: 500,
-      temperature: 0.7
-    });
-    
-    const analysis = response.choices[0].message.content;
-    
-    if (analysis && !analysis.includes('NO_QUESTION')) {
-      // Parse and display the detected question and answer
-      displayScreenAnalysis(analysis);
-    }
-    
-  } catch (error) {
-    console.error('Screen analysis error:', error);
-    // Don't stop reading on single error, just skip this iteration
-    if (error.message && error.message.includes('vision')) {
-      showError('Vision model not available. Using text extraction instead.');
-      await captureAndAnalyzeScreenWithOCR();
-    }
-  }
-}
-
-async function captureAndAnalyzeScreenWithOCR() {
-  // Fallback: Try to extract text and analyze
-  try {
-    const screenshot = await ipcRenderer.invoke('capture-screen');
-    if (!screenshot) return;
-    
-    // Simple analysis without OCR - just notify user to use manual questions
-    const now = Date.now();
-    const lastNotification = window.lastScreenNotification || 0;
-    
-    // Notify every 30 seconds
-    if (now - lastNotification > 30000) {
-      updateStatus('Monitoring... Press Record for questions', 'processing');
-      window.lastScreenNotification = now;
-    }
-  } catch (error) {
-    console.error('Screen OCR error:', error);
-  }
-}
-
-function displayScreenAnalysis(analysis) {
-  // Parse the analysis
-  let question = '';
-  let answer = '';
-  
-  if (analysis.includes('QUESTION:') && analysis.includes('ANSWER:')) {
-    const parts = analysis.split('|');
-    question = parts[0].replace('QUESTION:', '').trim();
-    answer = parts[1].replace('ANSWER:', '').trim();
-  } else {
-    // Just show the analysis as-is
-    question = 'Screen Analysis';
-    answer = analysis;
-  }
-  
-  // Check if this question was already shown recently
-  const lastQuestion = window.lastDetectedQuestion || '';
-  if (question === lastQuestion) {
-    return; // Don't show duplicate
-  }
-  
-  window.lastDetectedQuestion = question;
-  
-  const card = document.createElement('div');
-  card.className = 'answer-card';
-  card.style.borderLeftColor = '#10b981';
-  
-  const questionDiv = document.createElement('div');
-  questionDiv.className = 'question';
-  questionDiv.textContent = `Detected: ${question}`;
-  
-  const answerDiv = document.createElement('div');
-  answerDiv.className = 'answer';
-  
-  const lines = answer.split('\n').filter(line => line.trim());
-  lines.forEach(line => {
-    const pointDiv = document.createElement('div');
-    pointDiv.className = 'talking-point';
-    pointDiv.textContent = line.replace(/^[-•*\d+\.\s]+/, '');
-    answerDiv.appendChild(pointDiv);
-  });
-  
-  card.appendChild(questionDiv);
-  card.appendChild(answerDiv);
-  
-  // Remove status card if exists
-  const statusCard = document.getElementById('screen-reading-status');
-  if (statusCard) {
-    answerContainer.insertBefore(card, statusCard.nextSibling);
-  } else {
-    answerContainer.insertBefore(card, answerContainer.firstChild);
-  }
-  
-  answerContainer.scrollTop = 0;
-  
-  // Show notification
-  ipcRenderer.send('show-notification', 'Question Detected!', question.substring(0, 50));
-}
 
 clearBtn.addEventListener('click', () => {
   answerContainer.innerHTML = `
@@ -685,6 +589,78 @@ function updateStatus(text, type = 'ready') {
     statusDot.classList.add('recording');
   } else if (type === 'processing') {
     statusDot.classList.add('processing');
+  } else if (type === 'error') {
+    statusDot.classList.add('error');
+  }
+}
+
+// Show manual input prompt when speech recognition fails
+function showManualInputPrompt() {
+  const card = document.createElement('div');
+  card.className = 'answer-card';
+  card.id = 'manual-input-card';
+  card.style.borderLeftColor = '#3c4043';
+  card.innerHTML = `
+    <div class="question">Type Your Question Instead</div>
+    <div class="answer">
+      <textarea id="manual-question-input" 
+                placeholder="Type your interview question here..." 
+                style="width: 100%; min-height: 100px; padding: 12px; 
+                       background: #202124; color: #e8eaed; border: 1px solid #3c4043; 
+                       border-radius: 6px; font-family: 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.5;
+                       resize: vertical; margin: 10px 0; box-sizing: border-box;">
+      </textarea>
+      <button id="submit-manual-question" 
+              style="width: 100%; padding: 12px; background: #8ab4f8; color: #202124; 
+                     border: none; border-radius: 6px; cursor: pointer; font-weight: 600;
+                     font-size: 14px;">
+        Generate Answer
+      </button>
+    </div>
+  `;
+  
+  const emptyState = answerContainer.querySelector('.empty-state');
+  if (emptyState) {
+    answerContainer.removeChild(emptyState);
+  }
+  
+  // Remove any existing manual input card
+  const existing = document.getElementById('manual-input-card');
+  if (existing) {
+    existing.remove();
+  }
+  
+  answerContainer.insertBefore(card, answerContainer.firstChild);
+  
+  // Add event listener for submit button
+  const submitBtn = document.getElementById('submit-manual-question');
+  const textarea = document.getElementById('manual-question-input');
+  
+  if (submitBtn && textarea) {
+    submitBtn.addEventListener('click', async () => {
+      const question = textarea.value.trim();
+      if (question) {
+        updateStatus('Generating answer...', 'processing');
+        card.remove();
+        await generateAnswer(question);
+      }
+    });
+    
+    // Allow Enter key to submit (Ctrl+Enter for new line)
+    textarea.addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter' && !e.ctrlKey) {
+        e.preventDefault();
+        const question = textarea.value.trim();
+        if (question) {
+          updateStatus('Generating answer...', 'processing');
+          card.remove();
+          await generateAnswer(question);
+        }
+      }
+    });
+    
+    // Focus the textarea
+    textarea.focus();
   }
 }
 
@@ -700,6 +676,3 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('DOMContentLoaded', () => {
   init();
 });
-
-// Initialize immediately
-init();

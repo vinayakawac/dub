@@ -3,16 +3,22 @@ const path = require('path');
 const Store = require('electron-store');
 const recorder = require('node-record-lpcm16');
 const fs = require('fs');
+const logger = require('./utils/logger');
+const errorHandler = require('./utils/errorHandler');
+const healthMonitor = require('./utils/healthMonitor');
 
-// Initialize electron-store for settings
+// Load environment variables FIRST before anything else
+require('dotenv').config();
+
+// Initialize electron-store for settings with proper defaults from .env
 const store = new Store({
   name: 'dub-config',
   defaults: {
     settings: {
-      model: 'llama-3.3-70b-versatile',
+      model: process.env.DEFAULT_MODEL || 'llama-3.3-70b-versatile',
       autoStart: false,
       transparencyLevel: 0.95,
-      autoDeleteTranscripts: true
+      autoDeleteTranscripts: process.env.AUTO_DELETE_TRANSCRIPTS === 'true' || true
     },
     resume: null,
     jobDescription: null,
@@ -20,6 +26,19 @@ const store = new Store({
       groq: process.env.GROQ_API_KEY || ''
     }
   }
+});
+
+// Ensure API key from .env is loaded into store if not already set
+if (process.env.GROQ_API_KEY && (!store.get('apiKeys.groq') || store.get('apiKeys.groq') === '')) {
+  store.set('apiKeys.groq', process.env.GROQ_API_KEY);
+  logger.info('Loaded Groq API key from environment');
+}
+
+logger.info('Application starting', { 
+  version: app.getVersion(),
+  platform: process.platform,
+  nodeEnv: process.env.NODE_ENV,
+  hasGroqKey: !!store.get('apiKeys.groq')
 });
 
 let overlayWindow = null;
@@ -30,42 +49,50 @@ let isRecording = false;
 
 // Create invisible overlay window
 function createOverlay() {
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-  
-  overlayWindow = new BrowserWindow({
-    width: 450,
-    height: 700,
-    x: width - 470,
-    y: 20,
-    transparent: true,
-    frame: false,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    opacity: store.get('settings.transparencyLevel', 0.95),
-    resizable: false,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      backgroundThrottling: false,
-      enableRemoteModule: true
+  try {
+    const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+    
+    overlayWindow = new BrowserWindow({
+      width: 450,
+      height: 700,
+      x: width - 470,
+      y: 20,
+      transparent: true,
+      frame: false,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      hasShadow: false,
+      opacity: store.get('settings.transparencyLevel', 0.95),
+      resizable: false,
+      webPreferences: {
+        nodeIntegration: true,
+        contextIsolation: false,
+        backgroundThrottling: false,
+        enableRemoteModule: true
+      }
+    });
+    
+    // Load the overlay UI
+    overlayWindow.loadFile(path.join(__dirname, 'overlay.html'));
+    
+    // Show on startup, then user can hide/show with hotkey
+    overlayWindow.show();
+
+    // Development tools (remove in production)
+    if (process.env.NODE_ENV !== 'production') {
+      overlayWindow.webContents.openDevTools({ mode: 'detach' });
     }
-  });
-  
-  // Load the overlay UI
-  overlayWindow.loadFile(path.join(__dirname, 'overlay.html'));
-  
-  // Show on startup, then user can hide/show with hotkey
-  overlayWindow.show();
 
-  // Development tools (remove in production)
-  if (process.argv.includes('--dev')) {
-    overlayWindow.webContents.openDevTools({ mode: 'detach' });
+    overlayWindow.on('closed', () => {
+      logger.info('Overlay window closed');
+      overlayWindow = null;
+    });
+    
+    logger.info('Overlay window created successfully');
+  } catch (error) {
+    logger.error('Failed to create overlay window', { error: error.message });
+    throw error;
   }
-
-  overlayWindow.on('closed', () => {
-    overlayWindow = null;
-  });
 }
 
 // Create system tray
@@ -152,7 +179,7 @@ function startRecording() {
         audioBuffer.push(chunk);
       })
       .on('error', (err) => {
-        console.error('Recording error:', err);
+        logger.error('Recording error', { error: err.message });
         isRecording = false;
         if (overlayWindow) {
           overlayWindow.webContents.send('recording-error', err.message);
@@ -167,9 +194,10 @@ function startRecording() {
       tray.setToolTip('dub - Recording...');
     }
 
+    logger.info('Recording started');
     showNotification('dub', 'Recording started');
   } catch (error) {
-    console.error('Failed to start recording:', error);
+    logger.error('Failed to start recording', { error: error.message });
     isRecording = false;
     showNotification('dub', 'Failed to start recording. Check microphone permissions.');
   }
@@ -198,28 +226,42 @@ function stopRecording() {
       tray.setToolTip('dub - Processing...');
     }
 
+    logger.info('Recording stopped', { audioPath });
     audioBuffer = [];
   } catch (error) {
-    console.error('Failed to stop recording:', error);
+    logger.error('Failed to stop recording', { error: error.message });
     isRecording = false;
   }
 }
 
 // IPC Handlers
 ipcMain.handle('get-config', async () => {
-  return store.store;
+  const config = store.store;
+  // Ensure API key is always included
+  if (!config.apiKeys) {
+    config.apiKeys = {};
+  }
+  if (!config.apiKeys.groq && process.env.GROQ_API_KEY) {
+    config.apiKeys.groq = process.env.GROQ_API_KEY;
+  }
+  logger.debug('Config requested', { hasGroqKey: !!config.apiKeys.groq });
+  return config;
 });
 
 ipcMain.handle('save-config', async (event, config) => {
   store.set(config);
+  logger.info('Config saved');
   return { success: true };
 });
 
 ipcMain.handle('get-api-keys', async () => {
-  return store.get('apiKeys', {
+  const keys = store.get('apiKeys', {
+    groq: process.env.GROQ_API_KEY || '',
     openai: process.env.OPENAI_API_KEY || '',
     anthropic: process.env.ANTHROPIC_API_KEY || ''
   });
+  logger.debug('API keys requested', { hasGroqKey: !!keys.groq });
+  return keys;
 });
 
 ipcMain.handle('save-api-keys', async (event, keys) => {
@@ -269,24 +311,6 @@ ipcMain.handle('delete-audio-file', async (event, filePath) => {
   }
 });
 
-ipcMain.handle('capture-screen', async () => {
-  const { desktopCapturer } = require('electron');
-  try {
-    const sources = await desktopCapturer.getSources({
-      types: ['screen'],
-      thumbnailSize: { width: 1920, height: 1080 }
-    });
-    
-    if (sources.length > 0) {
-      return sources[0].thumbnail.toDataURL();
-    }
-    return null;
-  } catch (error) {
-    console.error('Screen capture error:', error);
-    return null;
-  }
-});
-
 // Show native notification
 function showNotification(title, body) {
   if (Notification.isSupported()) {
@@ -311,7 +335,18 @@ app.whenReady().then(() => {
     openAsHidden: true
   });
 
+  // Log successful startup
+  logger.info('Application ready', {
+    autoStart: autoStart,
+    version: app.getVersion()
+  });
+
   showNotification('dub', 'Ready. Press Ctrl+Shift+R to record.');
+  
+  // Generate initial health report
+  setTimeout(() => {
+    healthMonitor.generateReport();
+  }, 5000);
 });
 
 app.on('window-all-closed', (e) => {
@@ -340,5 +375,18 @@ app.on('activate', () => {
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
-  console.error('Uncaught exception:', error);
+  logger.error('Uncaught exception', { 
+    error: error.message, 
+    stack: error.stack 
+  });
+  healthMonitor.recordCrash();
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled promise rejection', {
+    reason: reason,
+    promise: promise
+  });
+  healthMonitor.recordError();
 });

@@ -1,48 +1,32 @@
 # dub
 
-A real-time AI interview assistant that listens to questions, generates personalized answers, and displays them discreetly during video calls or coding sessions. Built with Electron for standalone desktop use.
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.0.0-green.svg)](package.json)
+
+**dub** is a real-time AI interview assistant desktop app that helps you ace interviews by generating instant, personalized answers using free AI technology.
 
 ## Features
 
-- **Real-time Speech Recognition** - Browser-based speech recognition (completely free)
-- **Free AI Model** - Llama 3.3 70B via Groq API (no payment required)
-- **Continuous Screen Reading** - Automatically detects and answers questions on screen
-- **Screen Capture & Analysis** - OCR and vision AI for coding problems
-- **Resume Context** - Add your background for personalized answers
-- **Transparent Overlay** - Always-on-top window, Chrome dark theme
-- **Global Hotkeys** - Control without switching windows
+- **Voice Recording** - Free browser-based speech recognition
+- **AI Answer Generation** - Powered by Groq's Llama 3.3 70B (Free!)
+- **Screen Capture** - Under development
+- **Personalized Answers** - Add your resume and job description
+- **Always-On-Top Overlay** - Dark, transparent interface
+- **Global Hotkeys** - Ctrl+Shift+R to record
 - **Privacy First** - Local storage, auto-delete transcripts
-- **Standalone Desktop App** - No browser dependencies, runs independently
 
 ## Installation
 
-### FREE Setup (Recommended - 2 Minutes!)
+### Prerequisites
+- Node.js 16+ 
+- Windows, macOS, or Linux
 
-1. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-2. **Get FREE Groq API key** (No credit card!)
-   - Visit: https://console.groq.com
-   - Sign up with email (free forever)
-   - Create API key
-   - Copy the key (starts with `gsk_...`)
-
-3. **Add key to app**
-   - Run `npm start`
-   - Click Settings
-   - Paste your free Groq key
-   - Save and you're done!
-
-**See [FREE-SETUP.md](FREE-SETUP.md) for detailed free setup guide.**
-
-### Alternative: From Source with OpenAI (Paid)
+### Quick Start
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
-   cd interview-copilot
+   git clone https://github.com/vinayakawac/dub.git
+   cd dub
    ```
 
 2. **Install dependencies**
@@ -50,51 +34,153 @@ A real-time AI interview assistant that listens to questions, generates personal
    npm install
    ```
 
-3. **Configure API keys**
-   - Copy `.env.example` to `.env`
-   - Add your paid OpenAI API key (or use free Groq key!)
+3. **Configure API key**
+   ```bash
+   cp .env.example .env
+   ```
+   Edit `.env` and add your Groq API key:
+   ```
+   GROQ_API_KEY=your_key_here
+   ```
 
-4. **Run the application**
+4. **Get FREE Groq API key**
+   - Visit: https://console.groq.com
+   - Sign up (free, no credit card required)
+   - Create API key
+   - Paste in `.env` file
+
+5. **Run the app**
    ```bash
    npm start
    ```
 
-### Build Standalone Executable
+### Alternative: Use Setup Scripts
 
+**Windows:**
 ```bash
-# Windows
-npm run build:win
-
-# macOS
-npm run build:mac
-
-# Linux
-npm run build:linux
+.\scripts\setup-production.bat
 ```
 
-The built application will be in the `dist/` folder.
+**macOS/Linux:**
+```bash
+chmod +x scripts/setup-production.sh
+./scripts/setup-production.sh
+```
 
 ## Usage
 
-### Hotkeys
+### Recording Questions
 
-- **Ctrl+Shift+R** - Start/stop voice recording
-
-### Workflow
-
-**Option 1: Voice Recording**
-1. Launch the application (overlay is always visible)
-2. Press **Ctrl+Shift+R** or click Record when a question is asked
+1. Launch the app - overlay appears in top-right corner
+2. When asked a question, press **Ctrl+Shift+R** or click **Record**
 3. Speak the question clearly
-4. Press **Ctrl+Shift+R** again to stop
-5. AI generates talking points instantly
+4. Press **Ctrl+Shift+R** again or click **Stop**
+5. AI generates answer instantly
+6. If speech fails, type your question in the fallback input
 
-**Option 2: Continuous Screen Reading**
-1. Click the **Capture** button in the overlay
-2. App continuously monitors your screen every 3 seconds
-3. Automatically detects interview questions or coding problems
-4. Generates and displays answers in real-time
-5. Click **Stop Read** to turn off monitoring
+### Settings
+
+Click **Settings** to:
+- Add/update Groq API key
+- Select AI model (Llama 3.3 70B, Mixtral, Gemma)
+- Add resume summary for personalized answers
+- Add job description for role-specific responses
+
+### Keyboard Shortcuts
+
+- **Ctrl+Shift+R** - Start/stop recording
+- **Escape** - Close settings modal
+
+## Tech Stack
+
+- **Electron 28** - Desktop framework
+- **Groq SDK** - AI completions (Llama 3.3 70B)
+- **Web Speech API** - Free speech recognition
+- **electron-store** - Settings persistence
+- **dotenv** - Environment configuration
+
+## Development
+
+```bash
+# Run in development mode
+npm start
+
+# Build for production
+npm run build
+
+# Package for current platform
+npm run dist
+```
+
+## Project Structure
+
+```
+dub/
+├── src/
+│   ├── main.js              # Electron main process
+│   ├── renderer.js          # Frontend logic & AI integration
+│   ├── overlay.html         # UI interface
+│   └── utils/
+│       ├── logger.js        # Logging system
+│       ├── errorHandler.js  # Error handling
+│       ├── healthMonitor.js # Health monitoring
+│       └── security.js      # Security utilities
+├── assets/
+│   └── icon.js              # App icon
+├── scripts/
+│   ├── setup-production.bat # Windows setup script
+│   ├── setup-production.sh  # Unix setup script
+│   └── start-free.bat       # Quick start script
+├── .github/
+│   └── workflows/           # CI/CD pipelines
+├── .env                     # API keys (create from .env.example)
+├── .env.example             # Environment template
+├── package.json             # Dependencies & scripts
+└── README.md                # This file
+```
+
+## Configuration
+
+Create `.env` file:
+```env
+GROQ_API_KEY=gsk_your_key_here
+DEFAULT_MODEL=llama-3.3-70b-versatile
+AUTO_DELETE_TRANSCRIPTS=true
+```
+
+## Troubleshooting
+
+**Speech recognition not working?**
+- Ensure you're using Chrome or Edge (Chromium-based)
+- Check microphone permissions
+- Use manual text input as fallback
+
+**API errors?**
+- Verify API key in Settings
+- Check internet connection
+- Free tier: 30 requests/minute
+
+**App not starting?**
+- Check Node.js version (16+)
+- Delete `node_modules` and run `npm install`
+- Check logs in app data folder
+
+## License
+
+MIT License - See [LICENSE](LICENSE) file
+
+## Contributing
+
+Contributions welcome! Open an issue or submit a pull request.
+
+## Support
+
+- GitHub Issues: [Report bugs](https://github.com/vinayakawac/dub/issues)
+- Groq API: [Get help](https://console.groq.com)
+
+---
+
+Made with ❤️ for interview success
 
 ### First Time Setup
 
@@ -194,69 +280,172 @@ Edit settings in the application or modify the config file at:
 ### Project Structure
 
 ```
+## 📁 Project Structure
+
+```
 dub/
+├── .github/
+│   └── workflows/          # CI/CD automation
+│       ├── build.yml       # Multi-platform builds
+│       └── test.yml        # Code quality checks
 ├── src/
-│   ├── main.js          # Electron main process (window, recording, IPC)
-│   ├── overlay.html     # UI template with Chrome dark theme
-│   ├── renderer.js      # AI integration, screen reading, speech recognition
+│   ├── main.js            # Electron main process
+│   ├── overlay.html       # UI with Chrome dark theme
+│   ├── renderer.js        # AI integration & UI logic
+│   └── utils/
+│       ├── logger.js      # Logging system
+│       ├── errorHandler.js # Error handling
+│       ├── security.js    # Security utilities
+│       └── healthMonitor.js # Performance tracking
 ├── assets/
-│   └── icon.js          # App icon configuration
-├── package.json
-├── .env                 # API keys (not committed)
-└── README.md
+│   └── icon.js            # Application icons
+├── .env.example           # Environment template
+├── CHANGELOG.md           # Version history
+├── CONTRIBUTING.md        # Contribution guide
+├── DEPLOYMENT.md          # Deployment instructions
+├── PRODUCTION_READY.md    # Production features
+├── SECURITY.md           # Security policy
+├── package.json          # Project configuration
+└── README.md            # This file
 ```
 
-### Technologies
+## 🛠️ Development
 
-- **Electron 28** - Cross-platform desktop framework
-- **Groq API** - FREE Llama 3.3 70B (text) & Vision (screen analysis)
-- **Web Speech API** - Free browser-based speech recognition
-- **Node.js** - Backend runtime
-- **Electron Store** - Encrypted local settings storage
-
-### Key Features Implementation
-
-- **Screen Reading**: Uses desktopCapturer + Groq Vision API
-- **Speech Recognition**: Native Web Speech API (Chrome/Edge)
-- **AI Processing**: Groq's Llama 3.3 70B with conversation history
-- **Hotkeys**: Global shortcuts work system-wide
-- **Theme**: Chrome dark theme (#202124, #8ab4f8)
-
-**Total Cost: $0 (Everything is FREE with Groq!)**
-
-## Build Standalone Executable
-
-Create a portable `.exe` file that runs on any Windows machine:
+### Development Mode
 
 ```bash
-npm run build:win
+npm run dev
 ```
 
-Output will be in `dist/` folder:
-- Installer version (with setup wizard)
-- Portable version (runs without installation)
+Features:
+- Hot reload enabled
+- DevTools open
+- Debug logging
+- Test environment
 
-Both versions are ~150MB and include everything needed to run.
+### Production Build
 
-## Technical Details
+```bash
+# Build for current platform
+npm run build
 
-### Free Groq API Benefits
-- **30 requests/minute** - More than enough for interviews
-- **No credit card required** - Sign up with email only
-- **Llama 3.3 70B** - Top-tier open source model
-- **Vision API** - For screen content analysis
-- **Whisper Large V3** - Professional transcription quality
+# Build for specific platforms
+npm run build:win     # Windows
+npm run build:mac     # macOS
+npm run build:linux   # Linux
+npm run build:all     # All platforms
+```
 
-### Architecture
-- **Main Process**: Manages window, system tray, audio recording, global shortcuts
-- **Renderer Process**: Handles UI, AI calls, screen capture, speech recognition
-- **IPC Communication**: Secure messaging between main and renderer
-- **Local Storage**: Encrypted settings with electron-store
+### Running Tests
 
-## License
+```bash
+npm test
+```
 
-MIT License - See LICENSE file for details
+## 🔒 Security
 
-## Disclaimer
+- ✅ API key encryption
+- ✅ Input sanitization
+- ✅ Content Security Policy
+- ✅ Secure local storage
+- ✅ No external data transmission
+- ✅ Automatic transcript deletion
+- ✅ Vulnerability scanning
+
+See [SECURITY.md](SECURITY.md) for details.
+
+## 📊 Monitoring & Logs
+
+### Log Locations
+
+**Windows:** `%APPDATA%/dub/logs/`  
+**macOS:** `~/Library/Application Support/dub/logs/`  
+**Linux:** `~/.config/dub/logs/`
+
+### Log Files
+
+- `app-YYYY-MM-DD.log` - General application logs
+- `error-YYYY-MM-DD.log` - Error logs only
+- Automatic cleanup after 7 days
+
+### Health Monitoring
+
+- Memory usage tracking
+- CPU usage monitoring
+- Error rate tracking
+- Crash detection
+- Performance metrics
+
+## 🔄 Auto-Updates
+
+The application includes automatic update functionality:
+
+- Checks for updates on startup
+- Downloads in background
+- Notifies when ready
+- Installs on next restart
+
+Configure in `.env`:
+```env
+AUTO_UPDATE_ENABLED=true
+UPDATE_CHECK_INTERVAL=3600000
+```
+
+## 💻 Technologies
+
+- **Electron 28** - Cross-platform desktop framework
+- **Groq API** - FREE Llama 3.3 70B + Vision AI
+- **Web Speech API** - Free browser-based speech recognition
+- **Node.js** - Backend runtime
+- **Electron Store** - Encrypted local settings
+- **electron-updater** - Auto-update functionality
+- **GitHub Actions** - CI/CD automation
+
+## 🚢 Deployment
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for comprehensive deployment instructions.
+
+### Quick Release
+
+1. Update version in `package.json`
+2. Commit changes
+3. Create tag:
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+4. GitHub Actions automatically:
+   - Builds for all platforms
+   - Creates release
+   - Uploads installers
+
+## 🤝 Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+### Quick Start
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
+
+## 📄 License
+
+MIT License - See [LICENSE](LICENSE) file for details
+
+## 🆘 Support
+
+- **Issues:** [GitHub Issues](https://github.com/vinayakawac/dub/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/vinayakawac/dub/discussions)
+- **Documentation:** See docs in repository
+
+## 🙏 Acknowledgments
+
+- **Groq** - For free Llama 3.3 70B API access
+- **Electron** - Cross-platform desktop framework
+- **Contributors** - All project contributors
+
+## ⚠️ Disclaimer
 
 This tool is for educational and legitimate interview preparation purposes only. Users are responsible for ensuring compliance with applicable laws and regulations in their jurisdiction. Use responsibly and ethically.
